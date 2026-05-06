@@ -1,98 +1,103 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
-import pandas as pd
-from datetime import datetime
+# ... (tes imports habituels)
 
-# --- CONFIGURATION ---
-PASSWORD_ADMIN = "tennis2026"
-CLASSEMENTS = {"NC": 0, "40": 1, "30/5": 2, "30/4": 3, "30/2": 4, "30/3": 5, "30/2": 6, "30/1": 7, "30": 8, "15/5": 9, "15/4": 10, "15/3": 11, "15/2": 12, "15/1": 13, "15": 14, "5/6": 15, "4/6": 16, "3/6": 17, "2/6": 18, "1/6": 19, "0": 20}
+# 1. Vérification du rôle au début
+def check_admin(username):
+    df_users = get_users()
+    user_data = df_users[df_users['username'] == username]
+    if not user_data.empty:
+        # On vérifie si la colonne 'is_admin' est à True
+        return user_data.iloc[0].get('is_admin', False)
+    return False
 
-# --- CONNEXION GOOGLE SHEETS ---
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-def get_users():
-    try:
-        return conn.read(worksheet="users", ttl=0)
-    except:
-        return pd.DataFrame(columns=["username", "password", "coins", "last_bonus"])
-
-def save_users(df):
-    conn.update(worksheet="users", data=df)
-
-# --- INITIALISATION SESSION ---
-if 'user_connected' not in st.session_state: st.session_state.user_connected = None
-if 'matchs' not in st.session_state: st.session_state.matchs = []
-if 'paris' not in st.session_state: st.session_state.paris = []
-if 'clubs' not in st.session_state: st.session_state.clubs = ["Club A", "Club B"]
-if 'club_scores' not in st.session_state: st.session_state.club_scores = {}
-if 'bg_color' not in st.session_state: st.session_state.bg_color = "#121212"
-if 'text_color' not in st.session_state: st.session_state.text_color = "#FFFFFF"
-
-# --- DESIGN CSS ---
-st.markdown(f"""
+# 2. Le Design du Header (CSS)
+st.markdown("""
     <style>
-    .stApp {{ background-color: {st.session_state.bg_color}; color: {st.session_state.text_color}; }}
-    .winamax-card {{ background-color: rgba(255,255,255,0.05); border: 1px solid {st.session_state.text_color}; border-radius: 15px; padding: 15px; margin-bottom: 15px; text-align: center; }}
+    .main-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 60px;
+        background-color: #1E1E1E;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 20px;
+        z-index: 999;
+        border-bottom: 2px solid #E2001A;
+    }
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: white;
+    }
+    .coins-badge {
+        background: #FFD700;
+        color: black;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: bold;
+    }
+    .profile-icon {
+        background: #E2001A;
+        width: 35px;
+        height: 35px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    /* On décale le contenu pour ne pas qu'il soit sous le header */
+    .stApp { margin-top: 60px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- SIDEBAR (COMPTES) ---
-with st.sidebar:
-    st.title("👤 Mon Espace")
+# 3. Affichage du Header
+if st.session_state.user_connected:
+    # On récupère les infos de l'utilisateur connecté
     df_users = get_users()
+    solde = df_users.loc[df_users['username'] == st.session_state.user_connected, 'coins'].values[0]
     
-    if st.session_state.user_connected is None:
-        mode = st.radio("Action", ["Connexion", "Inscription"])
-        u_name = st.text_input("Prénom")
-        u_pwd = st.text_input("MDP", type="password")
-        
-        if st.button("Valider"):
-            if mode == "Inscription":
-                if u_name in df_users['username'].values: st.error("Prénom déjà pris")
-                else:
-                    new_user = pd.DataFrame([{"username": u_name, "password": str(u_pwd), "coins": 10.0, "last_bonus": "Jamais"}])
-                    df_users = pd.concat([df_users, new_user], ignore_index=True)
-                    save_users(df_users)
-                    st.success("Inscrit ! Connecte-toi.")
-            else:
-                user_row = df_users[(df_users['username'] == u_name) & (df_users['password'] == str(u_pwd))]
-                if not user_row.empty:
-                    st.session_state.user_connected = u_name
-                    st.rerun()
-                else: st.error("Erreur identifiants")
-    else:
-        st.write(f"Bonjour **{st.session_state.user_connected}**")
-        solde = df_users.loc[df_users['username'] == st.session_state.user_connected, 'coins'].values[0]
-        st.metric("Mon Solde", f"{round(float(solde), 1)} 🪙")
-        if st.button("Déconnexion"):
-            st.session_state.user_connected = None
-            st.rerun()
+    st.markdown(f"""
+        <div class="main-header">
+            <div style="font-weight: bold; color: #E2001A;">🎾 TENNIS BET</div>
+            <div class="user-info">
+                <span class="coins-badge">{round(float(solde), 1)} 🪙</span>
+                <div class="profile-icon">👤</div>
+                <span>{st.session_state.user_connected}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-# --- ONGLETS ---
-tab_home, tab_parier, tab_ranking, tab_admin = st.tabs(["🏠 Accueil", "💰 Parier", "🏆 Classement", "⚙️ Admin"])
+# 4. Gestion des Onglets Dynamiques
+tabs_list = ["🏠 Accueil", "💰 Parier", "🏆 Classement"]
 
-with tab_home:
-    st.subheader("🎾 Résultats du Jour")
-    matchs_finis = [m for m in st.session_state.matchs if m['fini']]
-    if not matchs_finis: st.write("Aucun résultat pour le moment.")
-    for m in matchs_finis:
-        st.success(f"**{m['j1']}** {m['score']} **{m['j2']}** (Vainqueur : {m['vainqueur']})")
+# On vérifie si le mec est admin pour ajouter l'onglet secret
+is_admin = False
+if st.session_state.user_connected:
+    is_admin = check_admin(st.session_state.user_connected)
 
-with tab_parier:
-    if st.session_state.user_connected:
-        match_dispo = [i for i, m in enumerate(st.session_state.matchs) if not m['fini']]
-        for i in match_dispo:
-            m = st.session_state.matchs[i]
-            st.markdown(f"<div class='winamax-card'><h3>{m['j1']} vs {m['j2']}</h3><p>Cotes : {m['ct1']} | {m['ct2']}</p></div>", unsafe_allow_html=True)
-            # Logique de pari... (simplifiée pour le gain de place)
-    else: st.warning("Connecte-toi pour parier !")
+if is_admin:
+    tabs_list.append("⚙️ Admin")
 
-with tab_ranking:
-    st.subheader("🏆 Classement")
-    st.dataframe(df_users[['username', 'coins']].sort_values("coins", ascending=False))
+# Création des onglets
+tabs = st.tabs(tabs_list)
 
-with tab_admin:
-    if st.text_input("Code Admin", type="password") == PASSWORD_ADMIN:
-        st.session_state.bg_color = st.color_picker("Couleur Fond", st.session_state.bg_color)
-        st.session_state.text_color = st.color_picker("Couleur Texte", st.session_state.text_color)
-        # Boutons pour créer des matchs ici...
+with tabs[0]:
+    st.write("Bienvenue sur l'accueil")
+    # ... ton code
+
+with tabs[1]:
+    # ... ton code parier
+
+with tabs[2]:
+    # ... ton code classement
+
+# L'onglet admin n'existe que si is_admin est True
+if is_admin:
+    with tabs[3]:
+        st.subheader("🛠 Panneau de contrôle")
+        # Ici tu mets ton code pour gérer les matchs et les comptes
+        st.write("Bonjour Grand Administrateur")
