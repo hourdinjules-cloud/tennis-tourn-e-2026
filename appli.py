@@ -2,10 +2,10 @@ import streamlit as st
 from supabase import create_client
 import pandas as pd
 
-# --- CONFIGURATION ---
+# --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Tennis Bet 2026", page_icon="🎾", layout="wide")
 
-# --- CONNEXION ---
+# --- 2. CONNEXION SUPABASE ---
 URL = st.secrets["SUPABASE_URL"]
 KEY = st.secrets["SUPABASE_KEY"]
 supabase = create_client(URL, KEY)
@@ -13,41 +13,48 @@ supabase = create_client(URL, KEY)
 if 'user' not in st.session_state:
     st.session_state.user = None
 
-# --- FONCTIONS ---
+# --- 3. FONCTIONS ---
 def get_all_users():
     res = supabase.table("users").select("*").execute()
     return pd.DataFrame(res.data)
 
 CLUBS_OFFICIELS = ["Le Vernet", "Saubens", "Lacroix"]
 
-# --- ACCÈS ---
+# --- 4. ACCÈS ---
 if st.session_state.user is None:
     st.title("🎾 Tennis Bet - Tournoi 2026")
-    u = st.sidebar.text_input("Prénom")
-    p = st.sidebar.text_input("Mot de passe", type="password")
-    if st.sidebar.button("Connexion"):
-        res = supabase.table("users").select("*").eq("username", u).eq("password", p).execute()
-        if res.data:
-            st.session_state.user = res.data[0]
-            st.rerun()
+    t1, t2 = st.tabs(["Connexion", "S'inscrire"])
     
-    st.subheader("S'inscrire")
-    new_u = st.text_input("Ton Prénom")
-    new_p = st.text_input("Mot de passe", type="password")
-    new_c = st.selectbox("Ton Club", CLUBS_OFFICIELS)
-    if st.button("Créer mon compte"):
-        supabase.table("users").insert({
-            "username": new_u, "password": new_p, "coins": 10, 
-            "club": new_c, "is_admin": False, 
-            "victoires_count": 0, "perf_count": 0
-        }).execute()
-        st.success("Compte créé !")
+    with t1:
+        u = st.text_input("Prénom", key="login_u")
+        p = st.text_input("Mot de passe", type="password", key="login_p")
+        if st.button("Se connecter"):
+            res = supabase.table("users").select("*").eq("username", u).eq("password", p).execute()
+            if res.data:
+                st.session_state.user = res.data[0]
+                st.rerun()
+            else: st.error("Identifiants incorrects.")
+
+    with t2:
+        new_u = st.text_input("Ton Prénom", key="reg_u")
+        new_p = st.text_input("Mot de passe", type="password", key="reg_p")
+        new_c = st.selectbox("Ton Club", CLUBS_OFFICIELS)
+        if st.button("Créer mon compte"):
+            try:
+                supabase.table("users").insert({
+                    "username": new_u, "password": new_p, "coins": 10, 
+                    "club": new_c, "is_admin": False, 
+                    "victoires_count": 0, "perf_count": 0
+                }).execute()
+                st.success("Compte créé ! Tu peux te connecter.")
+            except Exception as e:
+                st.error(f"Erreur : Vérifie que les colonnes SQL ont été créées.")
 
 else:
     user = st.session_state.user
     df_all = get_all_users()
     
-    # Header
+    # Header simple
     col_h1, col_h2 = st.columns([4, 1])
     with col_h1: st.title("🎾 Tennis Bet 2026")
     with col_h2: 
@@ -57,81 +64,51 @@ else:
             st.rerun()
 
     # --- ONGLETS ---
-    tabs = st.tabs(["🏠 Accueil", "💰 Parier", "🏆 Classements", "🛡️ Guerre des Clubs", "⚙️ Admin" if user.get('is_admin') else " "])
+    tabs = st.tabs(["🏠 Accueil", "💰 Parier", "🏆 Classements", "🛡️ Clubs", "⚙️ Admin" if user.get('is_admin') else " "])
 
     # --- 🏠 ACCUEIL ---
     with tabs[0]:
-        col_main, col_side = st.columns([2, 1])
-        with col_main:
+        c1, c2 = st.columns([2, 1])
+        with c1:
             st.subheader("📅 Matchs du jour")
-            st.info("Utilisez l'onglet Admin pour publier des matchs.")
-
-        with col_side:
+            st.info("Aucun match publié par l'admin.")
+        with c2:
             st.subheader("👑 Roi de la Perf")
-            if not df_all.empty and df_all['perf_count'].max() > 0:
+            if not df_all.empty and "perf_count" in df_all.columns:
                 roi = df_all.sort_values("perf_count", ascending=False).iloc[0]
-                st.markdown(f"""
-                    <div style="background:linear-gradient(135deg, #FFD700, #FFA500); padding:15px; border-radius:15px; color:black; text-align:center; font-weight:bold;">
-                        🏆 {roi['username']}<br>{roi['perf_count']} Perfs réalisées !
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            st.divider()
-            st.subheader("🔥 Top du jour (Paris)")
-            st.subheader("💀 Flop du jour (Paris)")
+                if roi['perf_count'] > 0:
+                    st.success(f"🏆 {roi['username']} ({roi['club']}) : {roi['perf_count']} Perfs")
+                else: st.write("Aucune perf encore.")
 
     # --- 🏆 CLASSEMENTS ---
     with tabs[2]:
-        st.subheader("🎾 Classement des Perfs (Victoires à classement supérieur)")
-        st.dataframe(df_all[['username', 'perf_count', 'club']].sort_values("perf_count", ascending=False), use_container_width=True, hide_index=True)
-        
+        st.subheader("🎾 Classement des Perfs (Victoire vs mieux classé)")
+        st.table(df_all[['username', 'perf_count', 'club']].sort_values("perf_count", ascending=False))
         st.subheader("🏆 Classement Général (Toutes victoires)")
-        st.dataframe(df_all[['username', 'victoires_count', 'club']].sort_values("victoires_count", ascending=False), use_container_width=True, hide_index=True)
+        st.table(df_all[['username', 'victoires_count', 'club']].sort_values("victoires_count", ascending=False))
 
     # --- 🛡️ GUERRE DES CLUBS ---
     with tabs[3]:
         st.header("🛡️ La Guerre des Clubs")
-        st.write("Somme de TOUTES les victoires par club.")
         if not df_all.empty:
             guerre = df_all.groupby("club")["victoires_count"].sum().reindex(CLUBS_OFFICIELS, fill_value=0).reset_index()
             st.bar_chart(data=guerre, x="club", y="victoires_count", color="#E2001A")
-            st.table(guerre)
 
     # --- ⚙️ ADMIN ---
     if user.get('is_admin'):
-        with tabs[4]:
-            st.header("Panel Administrateur")
+        with tabs[-1]:
+            st.header("Gestion des résultats")
+            vainqueur = st.selectbox("Vainqueur du match", df_all['username'].tolist())
+            type_v = st.radio("Type de gain", ["Victoire normale (+1)", "PERF (+1 Victoire ET +1 Perf)"])
             
-            # --- PUBLIER MATCH ---
-            st.subheader("1. Match du jour")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.text_input("Joueur A")
-                st.selectbox("Club A", CLUBS_OFFICIELS)
-            with col2:
-                st.text_input("Joueur B")
-                st.selectbox("Club B", CLUBS_OFFICIELS)
-            st.button("Publier")
-
-            st.divider()
-
-            # --- ENREGISTRER RÉSULTAT ---
-            st.subheader("2. Valider une Victoire")
-            vainqueur = st.selectbox("Vainqueur", df_all['username'].tolist())
-            type_v = st.radio("Type de victoire", ["Victoire normale", "PERF (Classement supérieur)"])
-            
-            if st.button("Enregistrer"):
+            if st.button("Enregistrer la Victoire"):
                 v_data = df_all[df_all['username'] == vainqueur].iloc[0]
+                new_v = int(v_data.get('victoires_count', 0) + 1)
+                updates = {"victoires_count": new_v}
                 
-                # Update Victoire (toujours +1)
-                new_v = int(v_data['victoires_count'] + 1)
-                up_dict = {"victoires_count": new_v}
+                if "PERF" in type_v:
+                    updates["perf_count"] = int(v_data.get('perf_count', 0) + 1)
                 
-                # Update Perf (seulement si coché)
-                if type_v == "PERF (Classement supérieur)":
-                    new_p = int(v_data['perf_count'] + 1)
-                    up_dict["perf_count"] = new_p
-                
-                supabase.table("users").update(up_dict).eq("username", vainqueur).execute()
-                st.success(f"Compteur mis à jour pour {vainqueur} !")
+                supabase.table("users").update(updates).eq("username", vainqueur).execute()
+                st.success("Données mises à jour !")
                 st.balloons()
