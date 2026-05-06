@@ -13,6 +13,7 @@ def get_users():
     try:
         return conn.read(worksheet="users", ttl=0)
     except:
+        # Si la feuille est vide, on crée la structure de base
         return pd.DataFrame(columns=["username", "password", "coins", "is_admin", "club"])
 
 # --- 3. DESIGN & HEADER CSS ---
@@ -30,6 +31,7 @@ st.markdown("""
     .stApp { margin-top: 50px; }
     .club-card {
         padding: 15px; border-radius: 10px; border: 1px solid #444; margin-bottom: 10px;
+        background-color: rgba(255,255,255,0.05);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -67,26 +69,25 @@ tabs = st.tabs(tabs_list)
 
 with tabs[0]:
     st.title("Tournoi de Tennis 2026")
-    st.write("Bienvenue sur l'application officielle du stage !")
+    st.write("Bienvenue ! Crée ton compte dans la barre de gauche pour recevoir tes 10 premiers coins.")
 
 with tabs[1]:
     st.header("💰 Paris Sportifs")
     if not st.session_state.user_connected:
-        st.info("Connecte-toi pour voir les cotes.")
+        st.warning("Connecte-toi pour voir les cotes.")
     else:
-        st.write("Aucun match ouvert aux paris pour le moment.")
+        st.info("Les matchs arriveront dès que l'admin les aura créés.")
 
 with tabs[2]:
     st.header("🏆 Classement Individuel")
     df_users = get_users()
     if not df_users.empty:
-        st.dataframe(df_users[['username', 'coins']].sort_values("coins", ascending=False), use_container_width=True)
+        st.dataframe(df_users[['username', 'coins', 'club']].sort_values("coins", ascending=False), use_container_width=True)
 
 with tabs[3]:
     st.header("⚔️ La Guerre des Clubs")
     df_users = get_users()
-    if 'club' in df_users.columns:
-        # On calcule les points totaux par club
+    if not df_users.empty and 'club' in df_users.columns:
         stats_clubs = df_users.groupby('club')['coins'].sum().reset_index()
         for _, row in stats_clubs.iterrows():
             st.markdown(f"""
@@ -95,30 +96,51 @@ with tabs[3]:
                     <p style='font-size:20px; color:#FFD700;'>{round(row['coins'], 1)} points cumulés</p>
                 </div>
                 """, unsafe_allow_html=True)
-    else:
-        st.info("Ajoute une colonne 'club' dans ton Google Sheet pour voir les scores !")
 
 if is_admin:
-    with tabs[4]:
+    with tabs[len(tabs_list)-1]:
         st.header("⚙️ Zone Administrateur")
-        st.write("Ici, tu peux gérer les matchs et les résultats.")
+        st.write("Gestion des matchs et des utilisateurs.")
 
-# --- 7. SIDEBAR ---
+# --- 7. SIDEBAR (CONNEXION & INSCRIPTION) ---
 with st.sidebar:
     if st.session_state.user_connected:
-        st.success(f"Connecté en tant que {st.session_state.user_connected}")
+        st.success(f"Connecté : {st.session_state.user_connected}")
         if st.button("Se déconnecter"):
             st.session_state.user_connected = None
             st.rerun()
     else:
-        st.subheader("Connexion")
-        u_name = st.text_input("Prénom")
+        mode = st.radio("Compte", ["Connexion", "Créer un compte"])
+        u_name = st.text_input("Prénom (ou Pseudo)")
         u_pwd = st.text_input("Mot de passe", type="password")
-        if st.button("Entrer"):
-            df_users = get_users()
-            check = df_users[(df_users['username'] == u_name) & (df_users['password'] == str(u_pwd))]
-            if not check.empty:
-                st.session_state.user_connected = u_name
-                st.rerun()
-            else:
-                st.error("Mauvais identifiants")
+        
+        if mode == "Créer un compte":
+            u_club = st.selectbox("Ton Club", ["Club A", "Club B", "Indépendant"])
+            if st.button("S'inscrire"):
+                df_users = get_users()
+                if u_name in df_users['username'].values:
+                    st.error("Ce nom est déjà pris !")
+                elif u_name == "" or u_pwd == "":
+                    st.error("Remplis tous les champs !")
+                else:
+                    # Création du nouvel utilisateur
+                    new_user = pd.DataFrame([{
+                        "username": u_name, 
+                        "password": str(u_pwd), 
+                        "coins": 10.0, 
+                        "is_admin": False, 
+                        "club": u_club
+                    }])
+                    updated_df = pd.concat([df_users, new_user], ignore_index=True)
+                    conn.update(worksheet="users", data=updated_df)
+                    st.success("Compte créé ! Tu peux maintenant te connecter.")
+        
+        else:
+            if st.button("Se connecter"):
+                df_users = get_users()
+                check = df_users[(df_users['username'] == u_name) & (df_users['password'] == str(u_pwd))]
+                if not check.empty:
+                    st.session_state.user_connected = u_name
+                    st.rerun()
+                else:
+                    st.error("Mauvais identifiants")
