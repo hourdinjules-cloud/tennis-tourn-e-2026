@@ -1,63 +1,39 @@
-import streamlit as st
-from supabase import create_client
-import pandas as pd
-
-# --- CONFIGURATION SUPABASE ---
-URL = st.secrets["SUPABASE_URL"]
-KEY = st.secrets["SUPABASE_KEY"]
-supabase = create_client(URL, KEY)
-
-# --- SESSION STATE ---
-if 'user' not in st.session_state:
-    st.session_state.user = None
-
-# --- FONCTIONS ---
-def check_login(username, password):
-    # Cherche l'utilisateur dans la table
-    res = supabase.table("users").select("*").eq("username", username).eq("password", password).execute()
-    return res.data
-
-# --- INTERFACE ---
-st.title("🎾 Tennis Bet - Tournoi 2026")
-
 if st.session_state.user is None:
-    # --- FORMULAIRE DE CONNEXION ---
     with st.sidebar:
-        st.subheader("Connexion")
-        u = st.text_input("Prénom")
-        p = st.text_input("Mot de passe", type="password")
+        # On crée deux onglets dans la barre latérale
+        menu = st.tabs(["Connexion", "S'inscrire"])
         
-        if st.button("Se connecter"):
-            user_data = check_login(u, p)
-            if user_data:
-                st.session_state.user = user_data[0]
-                st.rerun()
-            else:
-                st.error("Identifiants incorrects...")
-    
-    st.info("👈 Connecte-toi sur le côté pour accéder aux paris.")
+        # --- ONGLET CONNEXION ---
+        with menu[0]:
+            u = st.text_input("Prénom")
+            p = st.text_input("Mot de passe", type="password")
+            if st.button("Se connecter"):
+                user_data = check_login(u, p)
+                if user_data:
+                    st.session_state.user = user_data[0]
+                    st.rerun()
+                else:
+                    st.error("Identifiants incorrects...")
 
-else:
-    # --- INTERFACE CONNECTÉE ---
-    u_info = st.session_state.user
-    
-    # Header stylé
-    st.markdown(f"""
-        <div style="background:#1E1E1E; padding:20px; border-radius:10px; border-left: 5px solid #E2001A;">
-            <h2 style="margin:0;">Salut {u_info['username']} ! 👋</h2>
-            <p style="font-size:20px; color:#FFD700;">Solde : <b>{u_info['coins']} 🪙</b></p>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    if st.sidebar.button("Se déconnecter"):
-        st.session_state.user = None
-        st.rerun()
-
-    # Tes onglets
-    tab1, tab2 = st.tabs(["💰 Parier", "🏆 Classement"])
-    
-    with tab2:
-        # On récupère tous les utilisateurs pour le classement
-        all_users = supabase.table("users").select("username, coins, club").execute()
-        df = pd.DataFrame(all_users.data)
-        st.table(df.sort_values("coins", ascending=False))
+        # --- ONGLET INSCRIPTION ---
+        with menu[1]:
+            new_u = st.text_input("Ton Prénom (ex: Jules)")
+            new_p = st.text_input("Choisis un mot de passe", type="password")
+            new_club = st.selectbox("Ton Club", ["Club A", "Club B", "Autre"])
+            
+            if st.button("Créer mon compte"):
+                if new_u and new_p:
+                    try:
+                        # On insère le nouveau joueur dans Supabase
+                        supabase.table("users").insert({
+                            "username": new_u,
+                            "password": new_p,
+                            "coins": 10,  # Cadeau de bienvenue !
+                            "club": new_club,
+                            "is_admin": False
+                        }).execute()
+                        st.success("Compte créé ! Connecte-toi à gauche.")
+                    except Exception as e:
+                        st.error("Ce nom est déjà pris ou il y a une erreur.")
+                else:
+                    st.warning("Remplis tous les champs !")
