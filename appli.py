@@ -88,11 +88,17 @@ tabs = st.tabs(tabs_list)
 with tabs[0]:
     st.write("Bienvenue sur l'accueil")
     # ... ton code
+with tabs[0]:
+    st.write("Bienvenue sur l'accueil") # <-- Ce décalage est OBLIGATOIRE
 
 with tabs[1]:
-    # ... ton code parier
+    st.subheader("Faites vos jeux")
+    # Remets ici ton code pour parier (bien décalé lui aussi !)
 
 with tabs[2]:
+    st.subheader("Le mur des champions")
+    # Remets ici ton code de classement (bien décalé !)
+
     # ... ton code classement
 
 # L'onglet admin n'existe que si is_admin est True
