@@ -5,6 +5,7 @@ import pandas as pd
 # --- 1. CONFIGURATION & DESIGN ---
 st.set_page_config(page_title="Tennis Bet 2026", page_icon="🎾", layout="wide")
 
+# Injection CSS pour le look Winamax
 st.markdown("""
     <style>
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; height: 45px; }
@@ -19,6 +20,7 @@ URL = st.secrets["SUPABASE_URL"]
 KEY = st.secrets["SUPABASE_KEY"]
 supabase = create_client(URL, KEY)
 
+# Initialisation des variables de session
 if 'user' not in st.session_state: st.session_state.user = None
 if 'active_bet' not in st.session_state: st.session_state.active_bet = None
 if 'mise_actuelle' not in st.session_state: st.session_state.mise_actuelle = 1
@@ -66,15 +68,21 @@ if st.session_state.user is None:
                     }).execute()
                     st.success("Compte créé avec succès ! Connecte-toi sur l'onglet d'à côté.")
                 except:
-                    st.error("Ce prénom est déjà utilisé ou erreur de base de données.")
+                    st.error("Erreur : Ce prénom est déjà pris ou la base de données n'est pas prête.")
             else:
                 st.warning("Remplis tous les champs !")
 
-# --- 5. INTERFACE PRINCIPALE ---
+# --- 5. INTERFACE PRINCIPALE (Connecté) ---
 else:
-    # Refresh auto des données user
-    res_u = supabase.table("users").select("*").eq("id", st.session_state.user['id']).execute()
-    user = res_u.data[0]
+    # REFRESH AUTO : Correction de la KeyError en utilisant 'username'
+    res_u = supabase.table("users").select("*").eq("username", st.session_state.user['username']).execute()
+    
+    if res_u.data:
+        user = res_u.data[0]
+    else:
+        st.session_state.user = None
+        st.rerun()
+        
     df_all = get_all_users()
 
     # Header
@@ -94,7 +102,7 @@ else:
     with tabs[0]:
         c1, c2 = st.columns([2, 1])
         with c1:
-            st.subheader("📅 Matchs du jour")
+            st.subheader("📅 Matchs par Tournoi")
             df_m = get_matches()
             if not df_m.empty:
                 tournois = df_m['tournament'].unique()
@@ -115,7 +123,7 @@ else:
                 roi = df_all.sort_values("perf_count", ascending=False).iloc[0]
                 st.success(f"{roi['username']} ({roi['club']}) - {roi['perf_count']} Perfs")
 
-    # --- 💰 PARIER ---
+    # --- 💰 PARIER (Style Winamax) ---
     with tabs[1]:
         st.header("🔥 Paris & Cotes")
         col_list, col_ticket = st.columns([2, 1])
@@ -136,11 +144,13 @@ else:
                             st.session_state.mise_actuelle = 1
                     st.divider()
         with col_ticket:
-            st.subheader("🎟️ Ticket")
+            st.subheader("🎟️ Ton Ticket")
             if st.session_state.active_bet:
                 bet = st.session_state.active_bet
-                st.markdown(f'<div class="bet-ticket"><b>{bet["player"]}</b><br>Cote : {bet["odds"]}</div>', unsafe_allow_html=True)
-                # Boutons + / -
+                st.markdown(f'<div class="bet-ticket">Vainqueur : <b>{bet["player"]}</b><br>Cote : {bet["odds"]}</div>', unsafe_allow_html=True)
+                
+                # Système + / - pour la mise
+                st.write("Mise :")
                 cm, cd, cp = st.columns([1,2,1])
                 with cm: 
                     if st.button("➖"): 
@@ -154,17 +164,25 @@ else:
                 
                 if st.button("🚀 VALIDER LE PARI", type="primary"):
                     new_bal = user['coins'] - st.session_state.mise_actuelle
-                    supabase.table("users").update({"coins": new_bal}).eq("id", user['id']).execute()
-                    supabase.table("bets").insert({"username": user['username'], "match_id": bet['id'], "prediction": bet['player'], "odds": bet['odds'], "stake": st.session_state.mise_actuelle}).execute()
+                    supabase.table("users").update({"coins": new_bal}).eq("username", user['username']).execute()
+                    supabase.table("bets").insert({
+                        "username": user['username'], 
+                        "match_id": bet['id'], 
+                        "prediction": bet['player'], 
+                        "odds": bet['odds'], 
+                        "stake": st.session_state.mise_actuelle
+                    }).execute()
                     st.success("Pari validé !")
                     st.session_state.active_bet = None
                     st.rerun()
+            else:
+                st.info("Clique sur une cote pour parier")
 
     # --- 🏆 CLASSEMENTS ---
     with tabs[2]:
-        st.subheader("🏆 Général")
+        st.subheader("🏆 Classement Victoires Générales")
         st.dataframe(df_all[['username', 'victoires_count', 'club']].sort_values("victoires_count", ascending=False), use_container_width=True, hide_index=True)
-        st.subheader("🎾 Perfs")
+        st.subheader("🎾 Classement Perfs")
         st.dataframe(df_all[['username', 'perf_count', 'club']].sort_values("perf_count", ascending=False), use_container_width=True, hide_index=True)
 
     # --- 🛡️ CLUBS ---
@@ -176,15 +194,15 @@ else:
     # --- ⚙️ ADMIN ---
     if user.get('is_admin'):
         with tabs[-1]:
-            st.header("Panel Admin")
-            with st.expander("➕ Créer Match"):
+            st.header("🛠 Panel Administrateur")
+            with st.expander("➕ Créer un Match"):
                 t_n = st.text_input("Tournoi")
-                n1, n2 = st.text_input("J1"), st.text_input("J2")
+                n1, n2 = st.text_input("Joueur 1"), st.text_input("Joueur 2")
                 c1, c2 = st.selectbox("Club 1", CLUBS_OFFICIELS), st.selectbox("Club 2", CLUBS_OFFICIELS)
                 if st.button("Ajouter Match"):
                     supabase.table("matches").insert({"player1": n1, "club1": c1, "player2": n2, "club2": c2, "tournament": t_n}).execute()
                     st.rerun()
-            with st.expander("✅ Valider Victoire"):
+            with st.expander("✅ Valider une Victoire (+1)"):
                 v = st.selectbox("Gagnant", df_all['username'].tolist())
                 p = st.checkbox("C'est une PERF")
                 if st.button("Valider"):
@@ -192,4 +210,5 @@ else:
                     up = {"victoires_count": int(v_d['victoires_count'] + 1)}
                     if p: up["perf_count"] = int(v_d['perf_count'] + 1)
                     supabase.table("users").update(up).eq("username", v).execute()
-                    st.success("Fait !")
+                    st.success("Données mises à jour !")
+                    st.balloons()
